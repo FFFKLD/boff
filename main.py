@@ -3,54 +3,66 @@ from astrbot.api.star import Context, Star, register
 from astrbot.api import logger, AstrBotConfig
 
 from buff163_unofficial_api import Buff163API
-from buff163_unofficial_api.rest_adapter import RestAdapter, Result
-from typing import Dict
-import requests
+from buff163_unofficial_api.models import Item, SpecificItem
+from buff163_unofficial_api.cs_enums import *
+from typing import List, Union
+from enum import Enum
 
 
-class CustomRestAdapter(RestAdapter):
-    def _do(
-        self, http_method: str, endpoint: str, ep_params: Dict = None, data: Dict = None
-    ) -> Result:
-        """重写 _do 方法以添加 Accept-Language 请求头"""
-        full_url = self.url + endpoint
-        headers = {
-            "Cookie": self._session_cookie,
-            "Accept-Language": "zh-CN,zh;q=0.9",
+class CustomBuff163API(Buff163API):
+    """
+    继承官方 API 类，并重写部分方法以支持中文。
+    """
+    def get_featured_market(self, pageNum: int = 1) -> List[Item]:
+        """重写方法，在请求中加入 lang=zh-CN 参数"""
+        ep_params = {
+            "game": "csgo",
+            "lang": "zh-CN",
+            "page_num": str(pageNum)
         }
+        result = self._rest_adapter.get(
+            endpoint="/market/goods", ep_params=ep_params
+        )
+        market = [Item(**item) for item in result.data["data"]["items"]]
+        return market
 
-        log_line_pre = f"method={http_method}, url={full_url}, params={ep_params}"
-        self._logger.debug(msg=log_line_pre)
+    def get_item_market(
+        self,
+        category: Union[Knife, Gun, Glove, Agent, Sticker, OtherItem],
+        pageNum: int = 1,
+    ) -> List[Item]:
+        """重写方法，在请求中加入 lang=zh-CN 参数"""
+        if not isinstance(category, Enum):
+            raise TypeError("Category must be an instance of an Enum.")
+        
+        ep_params = {
+            "game": "csgo",
+            "lang": "zh-CN",
+            "page_num": str(pageNum),
+            "category": category.value
+        }
+        result = self._rest_adapter.get(
+            endpoint="/market/goods", ep_params=ep_params
+        )
 
-        # 直接调用父类的 _do 方法逻辑，但使用我们自己的 headers
-        # 为了避免重复代码，这里我们直接复制并修改父类方法的核心逻辑
-        try:
-            response = requests.request(
-                method=http_method,
-                url=full_url,
-                verify=self._ssl_verify,
-                headers=headers,
-                params=ep_params,
-                json=data,
-            )
-        except Exception as e:
-            self._logger.error(msg=f"Request failed: {e}")
-            raise
+        market = [Item(**item) for item in result.data["data"]["items"]]
+        return market
 
-        try:
-            data_out = response.json()
-        except ValueError as e:
-            self._logger.error(msg=f"Bad JSON in response: {e}")
-            raise
+    def get_item(self, item_id: int) -> SpecificItem:
+        """重写方法，在请求中加入 lang=zh-CN 参数"""
+        ep_params = {
+            "game": "csgo",
+            "lang": "zh-CN",
+            "goods_id": str(item_id)
+        }
+        result = self._rest_adapter.get(
+            endpoint="/market/goods/info", ep_params=ep_params
+        )
 
-        if data_out.get("code") != "OK":
-            self._logger.error(msg=f"Error response code: {data_out.get('code')}")
-            raise Exception(f"Error from API: {data_out.get('error', 'Unknown error')}")
-
-        return Result(response.status_code, message=response.reason, data=data_out)
+        return SpecificItem(**result.data["data"])
 
 
-@register("buff163", "Cline", "一个简单的 Buff163 查询插件", "1.0.0")
+@register("buff163", "Cline", "一个简单的 Buff163 查询插件", "1.0.1")
 class Buff163Plugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -58,12 +70,8 @@ class Buff163Plugin(Star):
         self.buff_api = None
         session_cookie = self.config.get("session_cookie")
         if session_cookie:
-            # 创建官方 API 实例
-            self.buff_api = Buff163API(session_cookie=session_cookie)
-            # 创建我们自定义的 adapter
-            custom_adapter = CustomRestAdapter(session_cookie=session_cookie)
-            # 通过 Monkey Patching 替换掉原来的 adapter
-            self.buff_api._rest_adapter = custom_adapter
+            # 使用我们自定义的 API 类
+            self.buff_api = CustomBuff163API(session_cookie=session_cookie)
         else:
             logger.warning("Buff163插件未配置 session_cookie，部分功能可能无法使用")
 
