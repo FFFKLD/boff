@@ -3,6 +3,52 @@ from astrbot.api.star import Context, Star, register
 from astrbot.api import logger, AstrBotConfig
 
 from buff163_unofficial_api import Buff163API
+from buff163_unofficial_api.rest_adapter import RestAdapter, Result
+from typing import Dict
+import requests
+
+
+class CustomRestAdapter(RestAdapter):
+    def _do(
+        self, http_method: str, endpoint: str, ep_params: Dict = None, data: Dict = None
+    ) -> Result:
+        """重写 _do 方法以添加 Accept-Language 请求头"""
+        full_url = self.url + endpoint
+        headers = {
+            "Cookie": self._session_cookie,
+            "Accept-Language": "zh-CN,zh;q=0.9",
+        }
+
+        log_line_pre = f"method={http_method}, url={full_url}, params={ep_params}"
+        self._logger.debug(msg=log_line_pre)
+
+        # 直接调用父类的 _do 方法逻辑，但使用我们自己的 headers
+        # 为了避免重复代码，这里我们直接复制并修改父类方法的核心逻辑
+        try:
+            response = requests.request(
+                method=http_method,
+                url=full_url,
+                verify=self._ssl_verify,
+                headers=headers,
+                params=ep_params,
+                json=data,
+            )
+        except Exception as e:
+            self._logger.error(msg=f"Request failed: {e}")
+            raise
+
+        try:
+            data_out = response.json()
+        except ValueError as e:
+            self._logger.error(msg=f"Bad JSON in response: {e}")
+            raise
+
+        if data_out.get("code") != "OK":
+            self._logger.error(msg=f"Error response code: {data_out.get('code')}")
+            raise Exception(f"Error from API: {data_out.get('error', 'Unknown error')}")
+
+        return Result(response.status_code, message=response.reason, data=data_out)
+
 
 @register("buff163", "Cline", "一个简单的 Buff163 查询插件", "1.0.0")
 class Buff163Plugin(Star):
@@ -10,8 +56,14 @@ class Buff163Plugin(Star):
         super().__init__(context)
         self.config = config
         self.buff_api = None
-        if self.config.get("session_cookie"):
-            self.buff_api = Buff163API(session_cookie=self.config.get("session_cookie"))
+        session_cookie = self.config.get("session_cookie")
+        if session_cookie:
+            # 创建官方 API 实例
+            self.buff_api = Buff163API(session_cookie=session_cookie)
+            # 创建我们自定义的 adapter
+            custom_adapter = CustomRestAdapter(session_cookie=session_cookie)
+            # 通过 Monkey Patching 替换掉原来的 adapter
+            self.buff_api._rest_adapter = custom_adapter
         else:
             logger.warning("Buff163插件未配置 session_cookie，部分功能可能无法使用")
 
