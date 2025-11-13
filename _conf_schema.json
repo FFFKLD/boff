@@ -1,8 +1,8 @@
 {
   "session_cookie": {
-    "description": "Buff163 的 Session Cookie",
-    "type": "string",
-    "hint": "请参考 buff163-unofficial-api 文档获取您的 Cookie",
+    "description": "Buff163 的完整 Cookie",
+    "type": "text",
+    "hint": "请从浏览器开发者工具的网络(Network)标签页中，复制完整的 Cookie 请求头字符串并粘贴于此，无需任何修改。",
     "obvious_hint": true
   }
 }
