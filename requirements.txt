@@ -1,1 +1,2 @@
-buff163-unofficial-api
+# This will install your custom library directly from GitHub.
+git+https://github.com/FFFKLD/buff_api_cn.git
